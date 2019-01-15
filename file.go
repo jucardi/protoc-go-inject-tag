@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
+	"github.com/jucardi/go-logger-lib/log"
+	"github.com/jucardi/go-streams/streams"
+	"github.com/jucardi/go-strings/stringx"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/ioutil"
-	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -26,7 +28,7 @@ type textArea struct {
 }
 
 func parseFile(inputPath string, xxxSkip []string) (areas []textArea, err error) {
-	log.Printf("parsing file %q for inject tag comments", inputPath)
+	log.Debugf("parsing file %q for inject tag comments", inputPath)
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, inputPath, nil, parser.ParseComments)
 	if err != nil {
@@ -62,7 +64,7 @@ func parseFile(inputPath string, xxxSkip []string) (areas []textArea, err error)
 		builder := strings.Builder{}
 		if len(xxxSkip) > 0 {
 			for i, skip := range xxxSkip {
-				builder.WriteString(fmt.Sprintf("%s:\"-\"", skip))
+				builder.WriteString(fmt.Sprintf(`%s:"-"`, skip))
 				if i > 0 {
 					builder.WriteString(",")
 				}
@@ -87,23 +89,27 @@ func parseFile(inputPath string, xxxSkip []string) (areas []textArea, err error)
 			if field.Doc == nil {
 				continue
 			}
+			var tags []string
 			for _, comment := range field.Doc.List {
 				tag := tagFromComment(comment.Text)
 				if tag == "" {
 					continue
 				}
+				tags = append(tags, tag)
+			}
+			if len(tags) > 0 {
 				currentTag := field.Tag.Value
 				area := textArea{
 					Start:      int(field.Pos()),
 					End:        int(field.End()),
 					CurrentTag: currentTag[1 : len(currentTag)-1],
-					InjectTag:  tag,
+					InjectTag:  strings.Join(tags, " "),
 				}
 				areas = append(areas, area)
 			}
 		}
 	}
-	log.Printf("parsed file %q, number of fields to inject custom tags: %d", inputPath, len(areas))
+	log.Debugf("parsed file %q, number of fields to inject custom tags: %d", inputPath, len(areas))
 	return
 }
 
@@ -125,15 +131,29 @@ func writeFile(inputPath string, areas []textArea) (err error) {
 	// inject custom tags from tail of file first to preserve order
 	for i := range areas {
 		area := areas[len(areas)-i-1]
-		log.Printf("inject custom tag %q to expression %q", area.InjectTag, string(contents[area.Start-1:area.End-1]))
+		log.Debugf("inject custom tag %q to expression %q", area.InjectTag, string(contents[area.Start-1:area.End-1]))
 		contents = injectTag(contents, area)
 	}
+
+	if cleanup {
+		contentStr := string(contents)
+		contentLines := streams.
+			From(strings.Split(contentStr, "\n")).
+			Filter(func(i interface{}) bool {
+				x := i.(string)
+				return tagFromComment(stringx.New(x).TrimSpace().Trim("\t").S()) == ""
+			}).
+			ToArray().([]string)
+
+		contents = []byte(strings.Join(contentLines, "\n"))
+	}
+
 	if err = ioutil.WriteFile(inputPath, contents, 0644); err != nil {
 		return
 	}
 
 	if len(areas) > 0 {
-		log.Printf("file %q is injected with custom tags", inputPath)
+		log.Debugf("file %q is injected with custom tags", inputPath)
 	}
 	return
 }

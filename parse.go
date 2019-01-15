@@ -21,7 +21,7 @@ type tagItem struct {
 type tagItems []tagItem
 
 func (ti tagItems) format() string {
-	tags := []string{}
+	var tags []string
 	for _, item := range ti {
 		tags = append(tags, fmt.Sprintf(`%s:%s`, item.key, item.value))
 	}
@@ -29,7 +29,7 @@ func (ti tagItems) format() string {
 }
 
 func (ti tagItems) override(nti tagItems) tagItems {
-	overrided := []tagItem{}
+	var override []tagItem
 	for i := range ti {
 		var dup = -1
 		for j := range nti {
@@ -39,20 +39,20 @@ func (ti tagItems) override(nti tagItems) tagItems {
 			}
 		}
 		if dup == -1 {
-			overrided = append(overrided, ti[i])
+			override = append(override, ti[i])
 		} else {
-			overrided = append(overrided, nti[dup])
+			override = append(override, nti[dup])
 			nti = append(nti[:dup], nti[dup+1:]...)
 		}
 	}
-	return append(overrided, nti...)
+	return append(override, nti...)
 }
 
 func newTagItems(tag string) tagItems {
-	items := []tagItem{}
-	splitted := rTags.FindAllString(tag, -1)
+	var items []tagItem
+	split := rTags.FindAllString(tag, -1)
 
-	for _, t := range splitted {
+	for _, t := range split {
 		sepPos := strings.Index(t, ":")
 		items = append(items, tagItem{
 			key:   t[:sepPos],
