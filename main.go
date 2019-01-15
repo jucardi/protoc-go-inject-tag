@@ -2,7 +2,9 @@ package main
 
 import (
 	"flag"
-	"log"
+	"github.com/jucardi/go-logger-lib/log"
+	"github.com/jucardi/go-osx/paths"
+	"path/filepath"
 	"strings"
 )
 
@@ -14,6 +16,22 @@ func main() {
 
 	flag.Parse()
 
+	if exists, err := paths.Exists(inputFile); err != nil {
+		log.Fatal(err)
+	} else if exists {
+		processFile(inputFile, xxxTags)
+		return
+	}
+
+	files, err := filepath.Glob(inputFile)
+	log.FatalErr(err)
+
+	for _, file := range files {
+		processFile(file, xxxTags)
+	}
+}
+
+func processFile(inputFile, xxxTags string) {
 	var xxxSkipSlice []string
 	if len(xxxTags) > 0 {
 		xxxSkipSlice = strings.Split(xxxTags, ",")
