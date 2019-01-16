@@ -12,6 +12,10 @@ func tagFromComment(comment string) (tag string) {
 	}
 	return
 }
+func makePointer(comment string) bool {
+	match := rPointer.FindStringSubmatch(comment)
+	return len(match) == 1
+}
 
 type tagItem struct {
 	key   string
@@ -62,15 +66,23 @@ func newTagItems(tag string) tagItems {
 	return items
 }
 
-func injectTag(contents []byte, area textArea) (injected []byte) {
+func injectTag(contents []byte, area fieldInfo) (injected []byte, offset int) {
 	expr := make([]byte, area.End-area.Start)
 	copy(expr, contents[area.Start-1:area.End-1])
 	cti := newTagItems(area.CurrentTag)
-	iti := newTagItems(area.InjectTag)
+	iti := newTagItems(*area.InjectTag)
 	ti := cti.override(iti)
 	expr = rInject.ReplaceAll(expr, []byte(fmt.Sprintf("`%s`", ti.format())))
-	injected = append(injected, contents[:area.Start-1]...)
+
+	if area.MakePointer {
+		injected = append(injected, contents[:area.TypePos-1]...)
+		injected = append(injected, byte('*'))
+	} else {
+		injected = append(injected, contents[:area.Start-1]...)
+	}
+
 	injected = append(injected, expr...)
 	injected = append(injected, contents[area.End-1:]...)
+
 	return
 }

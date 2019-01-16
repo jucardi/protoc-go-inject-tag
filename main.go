@@ -2,9 +2,9 @@ package main
 
 import (
 	"github.com/jucardi/go-logger-lib/log"
-	"github.com/jucardi/go-osx/paths"
 	"github.com/spf13/cobra"
 	"path/filepath"
+	"strings"
 )
 
 var (
@@ -37,21 +37,17 @@ func run(cmd *cobra.Command, _ []string) {
 		log.SetLevel(log.DebugLevel)
 	}
 
+	log.Debug("input: ", inputFile)
 	if inputFile == "" {
 		log.Fatal("The input cannot be empty", cmd.Usage())
-	}
-
-	if exists, err := paths.Exists(inputFile); err != nil {
-		log.FatalErr(err)
-	} else if exists {
-		processFile(inputFile, xxxTags)
-		return
 	}
 
 	files, err := filepath.Glob(inputFile)
 	log.FatalErr(err)
 
+	log.Debug("Files:  ", strings.Join(files, ", "))
 	for _, file := range files {
+
 		processFile(file, xxxTags)
 	}
 }
@@ -61,6 +57,7 @@ func processFile(inputFile string, xxxTags []string) {
 		log.Fatal("input file is mandatory")
 	}
 
+	log.Info("Processing file: ", inputFile)
 	areas, err := parseFile(inputFile, xxxTags)
 	log.FatalErr(err)
 	log.FatalErr(

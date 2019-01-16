@@ -16,19 +16,22 @@ import (
 
 var (
 	rComment = regexp.MustCompile(`^//\s*@inject_tag:\s*(.*)$`)
+	rPointer = regexp.MustCompile(`^//\s*@pointer$`)
 	rInject  = regexp.MustCompile("`.+`$")
 	rTags    = regexp.MustCompile(`[\w_]+:"[^"]+"`)
 )
 
-type textArea struct {
-	Start      int
-	End        int
-	CurrentTag string
-	InjectTag  string
+type fieldInfo struct {
+	Start       int
+	End         int
+	Name        string
+	TypePos     int
+	CurrentTag  string
+	InjectTag   *string
+	MakePointer bool
 }
 
-func parseFile(inputPath string, xxxSkip []string) (areas []textArea, err error) {
-	log.Debugf("parsing file %q for inject tag comments", inputPath)
+func parseFile(inputPath string, xxxSkip []string) (areas []fieldInfo, err error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, inputPath, nil, parser.ParseComments)
 	if err != nil {
@@ -77,11 +80,12 @@ func parseFile(inputPath string, xxxSkip []string) (areas []textArea, err error)
 				name := field.Names[0].Name
 				if len(xxxSkip) > 0 && strings.HasPrefix(name, "XXX") {
 					currentTag := field.Tag.Value
-					area := textArea{
+					newTag := builder.String()
+					area := fieldInfo{
 						Start:      int(field.Pos()),
 						End:        int(field.End()),
 						CurrentTag: currentTag[1 : len(currentTag)-1],
-						InjectTag:  builder.String(),
+						InjectTag:  &newTag,
 					}
 					areas = append(areas, area)
 				}
@@ -90,30 +94,45 @@ func parseFile(inputPath string, xxxSkip []string) (areas []textArea, err error)
 				continue
 			}
 			var tags []string
+			var isPointer bool
+
 			for _, comment := range field.Doc.List {
+				if makePointer(comment.Text) {
+					isPointer = true
+				}
+
 				tag := tagFromComment(comment.Text)
 				if tag == "" {
 					continue
 				}
 				tags = append(tags, tag)
 			}
+			names := streams.From(field.Names).Map(func(i interface{}) interface{} {
+				x := i.(*ast.Ident)
+				return x.Name
+			}).ToArray().([]string)
+
 			if len(tags) > 0 {
 				currentTag := field.Tag.Value
-				area := textArea{
-					Start:      int(field.Pos()),
-					End:        int(field.End()),
-					CurrentTag: currentTag[1 : len(currentTag)-1],
-					InjectTag:  strings.Join(tags, " "),
+				newTag := strings.Join(tags, " ")
+				area := fieldInfo{
+					Start:       int(field.Type.Pos()),
+					End:         int(field.Tag.End()),
+					Name:        strings.Join(names, ", "),
+					TypePos:     int(field.Type.Pos()),
+					CurrentTag:  currentTag[1 : len(currentTag)-1],
+					InjectTag:   &newTag,
+					MakePointer: isPointer,
 				}
 				areas = append(areas, area)
 			}
 		}
 	}
-	log.Debugf("parsed file %q, number of fields to inject custom tags: %d", inputPath, len(areas))
+	log.Debugf("parsed file '%s', number of fields to inject custom tags: %d", inputPath, len(areas))
 	return
 }
 
-func writeFile(inputPath string, areas []textArea) (err error) {
+func writeFile(inputPath string, areas []fieldInfo) (err error) {
 	f, err := os.Open(inputPath)
 	if err != nil {
 		return
@@ -128,32 +147,35 @@ func writeFile(inputPath string, areas []textArea) (err error) {
 		return
 	}
 
+	offset := 0
 	// inject custom tags from tail of file first to preserve order
 	for i := range areas {
 		area := areas[len(areas)-i-1]
-		log.Debugf("inject custom tag %q to expression %q", area.InjectTag, string(contents[area.Start-1:area.End-1]))
-		contents = injectTag(contents, area)
+		if area.InjectTag != nil {
+			log.Debugf("Injecting custom tag `%s` to '%s'", *area.InjectTag, area.Name)
+		}
+		area.Start += offset
+		area.End += offset
+		contents, offset = injectTag(contents, area)
 	}
 
 	if cleanup {
-		contentStr := string(contents)
-		contentLines := streams.
-			From(strings.Split(contentStr, "\n")).
+		str := string(contents)
+		lines := streams.
+			From(strings.Split(str, "\n")).
 			Filter(func(i interface{}) bool {
 				x := i.(string)
-				return tagFromComment(stringx.New(x).TrimSpace().Trim("\t").S()) == ""
+				str := stringx.New(x).TrimSpace().Trim("\t").S()
+				return tagFromComment(str) == "" && !makePointer(str)
 			}).
 			ToArray().([]string)
 
-		contents = []byte(strings.Join(contentLines, "\n"))
+		contents = []byte(strings.Join(lines, "\n"))
 	}
 
 	if err = ioutil.WriteFile(inputPath, contents, 0644); err != nil {
 		return
 	}
 
-	if len(areas) > 0 {
-		log.Debugf("file %q is injected with custom tags", inputPath)
-	}
 	return
 }
