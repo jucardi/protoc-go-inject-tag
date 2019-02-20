@@ -84,7 +84,6 @@ func getAreaPadding(contents []byte, start int) (padding []byte) {
 		}
 		padding = append(padding, contents[i])
 	}
-	log.Info("result:", string(padding))
 	return
 }
 
