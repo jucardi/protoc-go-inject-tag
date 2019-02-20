@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/jucardi/go-logger-lib/log"
 	"strings"
 )
 
@@ -12,6 +13,15 @@ func tagFromComment(comment string) (tag string) {
 	}
 	return
 }
+
+func privateFieldFromComment(comment string) (tag string) {
+	match := rField.FindStringSubmatch(comment)
+	if len(match) == 2 {
+		tag = match[1]
+	}
+	return
+}
+
 func makePointer(comment string) bool {
 	match := rPointer.FindStringSubmatch(comment)
 	return len(match) == 1
@@ -66,13 +76,36 @@ func newTagItems(tag string) tagItems {
 	return items
 }
 
-func injectTag(contents []byte, area fieldInfo) (injected []byte, offset int) {
+func getAreaPadding(contents []byte, start int) (padding []byte) {
+	for i := start; contents[i] != '\n'; i-- {
+		if contents[i] != ' ' && contents[i] != '\t' {
+			padding = []byte{}
+			continue
+		}
+		padding = append(padding, contents[i])
+	}
+	log.Info("result:", string(padding))
+	return
+}
+
+func inject(contents []byte, area fieldInfo) (injected []byte, offset int) {
 	expr := make([]byte, area.End-area.Start)
 	copy(expr, contents[area.Start-1:area.End-1])
 	cti := newTagItems(area.CurrentTag)
 	iti := newTagItems(*area.InjectTag)
 	ti := cti.override(iti)
 	expr = rInject.ReplaceAll(expr, []byte(fmt.Sprintf("`%s`", ti.format())))
+	var p []byte
+	if len(area.InjectFields) > 0 {
+		p = getAreaPadding(contents, area.Start)
+	}
+
+	for _, field := range area.InjectFields {
+		expr = append(expr, byte('\n'))
+		expr = append(expr, p...)
+		expr = append(expr, []byte(field)...)
+		offset += len(field) + len(p) + 1
+	}
 
 	if area.MakePointer {
 		injected = append(injected, contents[:area.TypePos-1]...)

@@ -16,19 +16,21 @@ import (
 
 var (
 	rComment = regexp.MustCompile(`^//\s*@inject_tag:\s*(.*)$`)
+	rField   = regexp.MustCompile(`^//\s*@inject_field:\s*(.*)$`)
 	rPointer = regexp.MustCompile(`^//\s*@pointer$`)
 	rInject  = regexp.MustCompile("`.+`$")
 	rTags    = regexp.MustCompile(`[\w_]+:"[^"]+"`)
 )
 
 type fieldInfo struct {
-	Start       int
-	End         int
-	Name        string
-	TypePos     int
-	CurrentTag  string
-	InjectTag   *string
-	MakePointer bool
+	Start        int
+	End          int
+	Name         string
+	TypePos      int
+	CurrentTag   string
+	InjectTag    *string
+	MakePointer  bool
+	InjectFields []string
 }
 
 func parseFile(inputPath string, xxxSkip []string) (areas []fieldInfo, err error) {
@@ -94,6 +96,7 @@ func parseFile(inputPath string, xxxSkip []string) (areas []fieldInfo, err error
 				continue
 			}
 			var tags []string
+			var fields []string
 			var isPointer bool
 
 			for _, comment := range field.Doc.List {
@@ -102,27 +105,32 @@ func parseFile(inputPath string, xxxSkip []string) (areas []fieldInfo, err error
 				}
 
 				tag := tagFromComment(comment.Text)
-				if tag == "" {
-					continue
+				if tag != "" {
+					tags = append(tags, tag)
 				}
-				tags = append(tags, tag)
+
+				field := privateFieldFromComment(comment.Text)
+				if field != "" {
+					fields = append(fields, field)
+				}
 			}
 			names := streams.From(field.Names).Map(func(i interface{}) interface{} {
 				x := i.(*ast.Ident)
 				return x.Name
 			}).ToArray().([]string)
 
-			if len(tags) > 0 {
+			if len(tags) > 0 || len(fields) > 0 {
 				currentTag := field.Tag.Value
 				newTag := strings.Join(tags, " ")
 				area := fieldInfo{
-					Start:       int(field.Type.Pos()),
-					End:         int(field.Tag.End()),
-					Name:        strings.Join(names, ", "),
-					TypePos:     int(field.Type.Pos()),
-					CurrentTag:  currentTag[1 : len(currentTag)-1],
-					InjectTag:   &newTag,
-					MakePointer: isPointer,
+					Start:        int(field.Type.Pos()),
+					End:          int(field.Tag.End()),
+					Name:         strings.Join(names, ", "),
+					TypePos:      int(field.Type.Pos()),
+					CurrentTag:   currentTag[1 : len(currentTag)-1],
+					InjectTag:    &newTag,
+					MakePointer:  isPointer,
+					InjectFields: fields,
 				}
 				areas = append(areas, area)
 			}
@@ -156,7 +164,7 @@ func writeFile(inputPath string, areas []fieldInfo) (err error) {
 		}
 		area.Start += offset
 		area.End += offset
-		contents, offset = injectTag(contents, area)
+		contents, offset = inject(contents, area)
 	}
 
 	if cleanup {
