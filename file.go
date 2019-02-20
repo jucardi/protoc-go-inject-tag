@@ -109,7 +109,7 @@ func parseFile(inputPath string, xxxSkip []string) (areas []fieldInfo, err error
 					tags = append(tags, tag)
 				}
 
-				field := privateFieldFromComment(comment.Text)
+				field := fieldFromComment(comment.Text)
 				if field != "" {
 					fields = append(fields, field)
 				}
@@ -174,7 +174,7 @@ func writeFile(inputPath string, areas []fieldInfo) (err error) {
 			Filter(func(i interface{}) bool {
 				x := i.(string)
 				str := stringx.New(x).TrimSpace().Trim("\t").S()
-				return tagFromComment(str) == "" && !makePointer(str)
+				return tagFromComment(str) == "" && fieldFromComment(str) == "" && !makePointer(str)
 			}).
 			ToArray().([]string)
 

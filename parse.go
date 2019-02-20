@@ -13,7 +13,7 @@ func tagFromComment(comment string) (tag string) {
 	return
 }
 
-func privateFieldFromComment(comment string) (tag string) {
+func fieldFromComment(comment string) (tag string) {
 	match := rField.FindStringSubmatch(comment)
 	if len(match) == 2 {
 		tag = match[1]
